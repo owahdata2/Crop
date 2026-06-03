@@ -18,7 +18,7 @@ st.set_page_config(
 # Load Model & Encoder
 @st.cache_resource
 def load_model():
-    model = joblib.load('crop_fruit_model_orange.pkl')
+    model = joblib.load('crop_model_orange.pkl')
     encoder = joblib.load('label_encoder.pkl')
     return model, encoder
 
