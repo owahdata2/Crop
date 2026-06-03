@@ -1,31 +1,54 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.tree import plot_tree
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
 
-# ================================================
-# CONFIGURATION
-# ================================================
 st.set_page_config(
     page_title="🌾 Crop Recommendation System",
     page_icon="🌱",
     layout="wide"
 )
 
-# Load Model & Encoder
-@st.cache_resource
-def load_model():
-    model = joblib.load('crop_model_orange.pkl')
-    encoder = joblib.load('label_encoder.pkl')
-    return model, encoder
+# ================================================
+# LOAD DATA (Lebih Aman untuk Streamlit Cloud)
+# ================================================
+@st.cache_data
+def load_data():
+    try:
+        # Path untuk lokal / workdir
+        df = pd.read_csv('/home/workdir/attachments/Crop_recommendation.csv')
+    except FileNotFoundError:
+        try:
+            # Path alternatif untuk Streamlit Cloud
+            df = pd.read_csv('Crop_recommendation.csv')
+        except FileNotFoundError:
+            st.error("❌ File dataset tidak ditemukan. Silakan upload file CSV.")
+            uploaded_file = st.file_uploader("Upload Crop_recommendation.csv", type="csv")
+            if uploaded_file is not None:
+                df = pd.read_csv(uploaded_file)
+            else:
+                st.stop()
+    return df
 
-model, le = load_model()
+df = load_data()
 
-# Load Dataset untuk referensi
-df = pd.read_csv('/home/workdir/attachments/Crop_recommendation.csv')
+X = df.drop('label', axis=1)
+y = df['label']
+
+le = LabelEncoder()
+y_encoded = le.fit_transform(y)
+
+# Train Model (kita train ulang agar tidak bergantung ke file .pkl)
+model = DecisionTreeClassifier(
+    criterion='gini',
+    min_samples_leaf=2,
+    random_state=42
+)
+model.fit(X, y_encoded)
 
 # ================================================
 # SIDEBAR
@@ -47,7 +70,7 @@ rainfall = st.sidebar.slider("Rainfall (mm)", 20.0, 300.0, 100.0)
 # MAIN PAGE
 # ================================================
 st.title("🌾 Sistem Rekomendasi Tanaman Pertanian")
-st.markdown("**Decision Tree** | *Menggunakan parameter tanah & cuaca untuk merekomendasikan tanaman terbaik*")
+st.markdown("**Decision Tree** | *Diselaraskan dengan Orange Data Mining*")
 
 col1, col2 = st.columns([3, 2])
 
@@ -69,7 +92,7 @@ with col1:
         st.success(f"**Rekomendasi: {crop_name.upper()}**")
         st.metric("Tingkat Keyakinan", f"{confidence:.1f}%")
 
-        # Top 3 rekomendasi
+        # Top 3
         top3_idx = np.argsort(probability)[::-1][:3]
         st.subheader("Top 3 Rekomendasi")
         for i, idx in enumerate(top3_idx, 1):
@@ -88,37 +111,39 @@ with col2:
 # ================================================
 # VISUALISASI
 # ================================================
-tab1, tab2, tab3 = st.tabs(["📈 Feature Importance", "🌳 Decision Tree", "📊 Confusion Matrix"])
+tab1, tab2, tab3 = st.tabs(["📈 Feature Importance", "🌳 Decision Tree", "📊 Info Model"])
 
 with tab1:
+    st.subheader("Feature Importance")
     importances = model.feature_importances_
     indices = np.argsort(importances)[::-1]
     fig, ax = plt.subplots(figsize=(10, 6))
-    sns.barplot(x=importances[indices], y=df.columns[:-1][indices], ax=ax, palette='viridis')
+    sns.barplot(x=importances[indices], y=X.columns[indices], ax=ax, palette='viridis')
     ax.set_title("Feature Importance")
     st.pyplot(fig)
 
 with tab2:
-    st.subheader("Struktur Decision Tree (max_depth = 5)")
+    st.subheader("Struktur Decision Tree")
     fig, ax = plt.subplots(figsize=(20, 12))
-    plot_tree(model, feature_names=df.columns[:-1], 
+    plot_tree(model, feature_names=X.columns, 
               class_names=le.classes_, filled=True, 
-              rounded=True, fontsize=8, max_depth=5, ax=ax)
+              rounded=True, fontsize=7, max_depth=5, ax=ax)
     st.pyplot(fig)
 
 with tab3:
-    st.info("Confusion Matrix dari evaluasi model (Test Set)")
-    st.image("https://i.imgur.com/placeholder.png", caption="Confusion Matrix akan ditampilkan jika ada file gambar")
+    st.subheader("Evaluasi Model")
+    X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42)
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    st.text("Classification Report:")
+    st.text(classification_report(y_test, y_pred, target_names=le.classes_, digits=3))
 
 # ================================================
-# INFORMASI DATASET
+# FOOTER
 # ================================================
 st.markdown("---")
-st.subheader("📋 Informasi Dataset")
-st.write(f"Total data: **{len(df)}** sampel | **22** jenis tanaman")
-
+st.write(f"Total data: **{len(df)}** sampel | **{len(le.classes_)}** jenis tanaman")
 if st.checkbox("Tampilkan Contoh Data"):
     st.dataframe(df.head(10))
 
-# Footer
-st.caption("Dibuat dengan ❤️ menggunakan Decision Tree | Diselaraskan dengan Orange Data Mining")
+st.caption("Dibuat dengan ❤️ | Decision Tree • Diselaraskan dengan Orange Data Mining")
